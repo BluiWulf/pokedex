@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bluiwulf/pokedex/internal/pokecache"
 	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 type cliCommand struct {
@@ -18,11 +20,14 @@ type cliCommand struct {
 }
 
 func startPokedex() {
+	const interval = 30 * time.Second
 	scanner := bufio.NewScanner(os.Stdin)
 	cfg := apiConfig{
 		Next: 	  "https://pokeapi.co/api/v2/location-area/",
 		Previous: "",
+		PokeCache: pokecache.NewCache(interval),
 	}
+
 	for {
 		fmt.Print("Pokedex > ")
 		scanner.Scan()
@@ -92,19 +97,23 @@ func (cfg *apiConfig) commandHelp() error {
 }
 
 func (cfg *apiConfig) commandMap() error {
-	res, err := http.Get(cfg.Next)
-	if err != nil {
-		return errors.New("Failed to get location-areas from PokeAPI")
+	entry, ok := cfg.PokeCache.Get(cfg.Next)
+	if !ok {
+		res, err := http.Get(cfg.Next)
+		if err != nil {
+			return errors.New("Failed to get location-areas from PokeAPI")
+		}
+		defer res.Body.Close()
+
+		entry, err = io.ReadAll(res.Body)
+		if err != nil {
+			return errors.New("Failed to read response body")
+		}
+		cfg.PokeCache.Add(cfg.Next, entry)
 	}
-	defer res.Body.Close()
 
 	resp := apiResp{}
-	resData, err := io.ReadAll(res.Body)
-	if err != nil {
-		return errors.New("Failed to read response body")
-	}
-
-	err = json.Unmarshal(resData, &resp)
+	err := json.Unmarshal(entry, &resp)
 	if err != nil {
 		return errors.New("Failed to unmarshal json from PokeAPI")
 	}
@@ -123,19 +132,23 @@ func (cfg *apiConfig) commandMapb() error {
 		fmt.Println("You're on the first page")
 		return nil
 	}
-	res, err := http.Get(cfg.Previous)
-	if err != nil {
-		return errors.New("Failed to get location-areas from PokeAPI")
+	entry, ok := cfg.PokeCache.Get(cfg.Previous)
+	if !ok {
+		res, err := http.Get(cfg.Previous)
+		if err != nil {
+			return errors.New("Failed to get location-areas from PokeAPI")
+		}
+		defer res.Body.Close()
+
+		entry, err = io.ReadAll(res.Body)
+		if err != nil {
+			return errors.New("Failed to read response body")
+		}
+		cfg.PokeCache.Add(cfg.Previous, entry)
 	}
-	defer res.Body.Close()
 
 	resp := apiResp{}
-	resData, err := io.ReadAll(res.Body)
-	if err != nil {
-		return errors.New("Failed to read response body")
-	}
-
-	err = json.Unmarshal(resData, &resp)
+	err := json.Unmarshal(entry, &resp)
 	if err != nil {
 		return errors.New("Failed to unmarshal json from PokeAPI")
 	}
