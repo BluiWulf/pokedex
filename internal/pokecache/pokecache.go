@@ -15,7 +15,7 @@ type Cache struct {
 	mux			*sync.Mutex
 }
 
-func NewCache(interval time.Duration) *Cache {
+func NewCache(interval time.Duration) Cache {
 	pokecache := Cache{
 		cache: map[string]cacheEntry{},
 		mux: &sync.Mutex{},
@@ -23,22 +23,22 @@ func NewCache(interval time.Duration) *Cache {
 
 	go pokecache.reapLoop(interval)
 
-	return &pokecache
+	return pokecache
 }
 
 func (cache *Cache) Add(key string, val []byte) {
 	cache.mux.Lock()
+	defer cache.mux.Unlock()
 	cache.cache[key] = cacheEntry{
 		createdAt: time.Now(),
 		val: val,
 	}
-	cache.mux.Unlock()
 }
 
 func (cache *Cache) Get(key string) ([]byte, bool) {
 	cache.mux.Lock()
+	defer cache.mux.Unlock()
 	entry, exists := cache.cache[key]
-	cache.mux.Unlock()
 	if exists {
 		return entry.val, true
 	}
@@ -50,6 +50,8 @@ func (cache *Cache) reapLoop(interval time.Duration) {
 	defer ticker.Stop()
 
 	for range ticker.C {
+		cache.mux.Lock()
+		defer cache.mux.Unlock()
 		for key, value := range cache.cache {
 			elapsed := time.Since(value.createdAt)
 			if elapsed > interval {

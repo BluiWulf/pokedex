@@ -2,32 +2,27 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bluiwulf/pokedex/internal/pokecache"
-	"io"
-	"net/http"
+	"github.com/bluiwulf/pokedex/internal/pokeapi"
 	"os"
 	"strings"
-	"time"
 )
+
+type apiConfig struct {
+	apiClient pokeapi.Client
+	Next 	  *string
+	Previous  *string
+}
 
 type cliCommand struct {
 	name		string
 	description string
-	callback	func() error
+	callback	func(*apiConfig) error
 }
 
-func startPokedex() {
-	const interval = 30 * time.Second
+func startPokedex(cfg *apiConfig) {
 	scanner := bufio.NewScanner(os.Stdin)
-	cfg := apiConfig{
-		Next: 	  "https://pokeapi.co/api/v2/location-area/",
-		Previous: "",
-		PokeCache: pokecache.NewCache(interval),
-	}
-
 	for {
 		fmt.Print("Pokedex > ")
 		scanner.Scan()
@@ -38,9 +33,9 @@ func startPokedex() {
 		}
 		usrCmd := words[0]
 		
-		cmd, valid := cfg.getCommands()[usrCmd]
+		cmd, valid := getCommands()[usrCmd]
 		if valid {
-			err := cmd.callback()
+			err := cmd.callback(cfg)
 			if err != nil {
 				fmt.Println("Error occurred: ", err)
 			}
@@ -52,110 +47,81 @@ func startPokedex() {
 
 // Command functions
 
-func (cfg *apiConfig) getCommands() map[string]cliCommand {
+func getCommands() map[string]cliCommand {
 	return map[string]cliCommand {
 		"exit": {
 			name: 		 	"exit",
 			description: 	"Exit the Pokedex",
-			callback:		cfg.commandExit,
+			callback:		commandExit,
 		},
 		"help": {
 			name:			"help",
 			description:	"Displays a help message",
-			callback:		cfg.commandHelp,
+			callback:		commandHelp,
 		},
 		"map": {
 			name: 			"map",
 			description: 	"Displays the next 20 location areas",
-			callback: 		cfg.commandMap,
+			callback: 		commandMap,
 		},
 		"mapb": {
 			name: 			"mapb",
 			description: 	"Displays the previous 20 location areas",
-			callback:		cfg.commandMapb,
+			callback:		commandMapb,
 		},
 	}
 }
 
-func (cfg *apiConfig) commandExit() error {
+func commandExit(cfg *apiConfig) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 
 	return errors.New("Failed to close Pokedex")
 }
 
-func (cfg *apiConfig) commandHelp() error {
+func commandHelp(cfg *apiConfig) error {
 	fmt.Println()
 	fmt.Println("Welcome to the Pokedex!")
 	fmt.Println("Usage:")
 	fmt.Println()
-	for _, cmd := range cfg.getCommands() {
+	for _, cmd := range getCommands() {
 		fmt.Printf("%v: %v\n", cmd.name, cmd.description)
 	}
 	fmt.Println()
 	return nil
 }
 
-func (cfg *apiConfig) commandMap() error {
-	entry, ok := cfg.PokeCache.Get(cfg.Next)
-	if !ok {
-		res, err := http.Get(cfg.Next)
-		if err != nil {
-			return errors.New("Failed to get location-areas from PokeAPI")
-		}
-		defer res.Body.Close()
-
-		entry, err = io.ReadAll(res.Body)
-		if err != nil {
-			return errors.New("Failed to read response body")
-		}
-		cfg.PokeCache.Add(cfg.Next, entry)
-	}
-
-	resp := apiResp{}
-	err := json.Unmarshal(entry, &resp)
+func commandMap(cfg *apiConfig) error {
+	areaResp, err := cfg.apiClient.ListAreas(cfg.Next)
 	if err != nil {
-		return errors.New("Failed to unmarshal json from PokeAPI")
+		return errors.New("Failed to get location areas")
 	}
 
-	cfg.Next = resp.Next
-	cfg.Previous = resp.Previous
-	for _, result := range resp.Results {
+	cfg.Next = areaResp.Next
+	cfg.Previous = areaResp.Previous
+
+	for _, result := range areaResp.Results {
 		fmt.Println(result.Name)
 	}
 
 	return nil
 }
 
-func (cfg *apiConfig) commandMapb() error {
-	if cfg.Previous == "" {
+func commandMapb(cfg *apiConfig) error {
+	if cfg.Previous == nil {
 		fmt.Println("You're on the first page")
 		return nil
 	}
-	entry, ok := cfg.PokeCache.Get(cfg.Previous)
-	if !ok {
-		res, err := http.Get(cfg.Previous)
-		if err != nil {
-			return errors.New("Failed to get location-areas from PokeAPI")
-		}
-		defer res.Body.Close()
 
-		entry, err = io.ReadAll(res.Body)
-		if err != nil {
-			return errors.New("Failed to read response body")
-		}
-		cfg.PokeCache.Add(cfg.Previous, entry)
-	}
-
-	resp := apiResp{}
-	err := json.Unmarshal(entry, &resp)
+	areaResp, err := cfg.apiClient.ListAreas(cfg.Previous)
 	if err != nil {
-		return errors.New("Failed to unmarshal json from PokeAPI")
+		return errors.New("Failed to get location areas")
 	}
 
-	cfg.Next = resp.Next
-	cfg.Previous = resp.Previous
-	for _, result := range resp.Results {
+	cfg.Next = areaResp.Next
+	cfg.Previous = areaResp.Previous
+
+	for _, result := range areaResp.Results {
 		fmt.Println(result.Name)
 	}
 
