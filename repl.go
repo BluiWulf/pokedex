@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bluiwulf/pokedex/internal/pokeapi"
+	"math/rand"
 	"os"
 	"strings"
 )
@@ -13,6 +14,7 @@ type apiConfig struct {
 	apiClient 	pokeapi.Client
 	Next 	  	*string
 	Previous  	*string
+	caught		map[string]pokeapi.PokemonInfo
 }
 
 type cliCommand struct {
@@ -54,6 +56,9 @@ func getCommands() ([]string, map[string]cliCommand) {
 		"map",
 		"mapb",
 		"explore",
+		"catch",
+		"inspect",
+		"pokedex",
 		"help",
 		"exit",
 	}
@@ -70,8 +75,23 @@ func getCommands() ([]string, map[string]cliCommand) {
 		},
 		"explore": {
 			name:			"explore",
-			description:	"Displays a list of all Pokemon in a given area",
+			description:	"Displays a list of all Pokemon in a given area (must provide name of Location Area)",
 			callback:		commandExplore,
+		},
+		"catch": {
+			name:			"catch",
+			description:	"Attempts to catch the Pokemon (must provide name of Pokemon)",
+			callback:		commandCatch,
+		},
+		"inspect": {
+			name:			"inspect",
+			description:	"Display details about caught Pokemon (must provide name of Pokemon)",
+			callback:		commandInspect,
+		},
+		"pokedex": {
+			name:			"pokedex",
+			description:	"Displays a list of all Pokemon caught and registered in the Pokedex",
+			callback:		commandPokedex,
 		},
 		"help": {
 			name:			"help",
@@ -85,17 +105,6 @@ func getCommands() ([]string, map[string]cliCommand) {
 		},
 	}
 	return keys, cmds
-}
-
-func checkCommands() error {
-	keys, cmds := getCommands()
-	for _, name := range keys {
-		_, valid := cmds[name]
-		if !valid {
-			return fmt.Errorf("unknown command: %s", name)
-		}
-	}
-	return nil
 }
 
 func commandExit(cfg *apiConfig, args ...string) error {
@@ -162,6 +171,9 @@ func commandExplore(cfg *apiConfig, args ...string) error {
 	if len(args) == 0 {
 		return errors.New("location area must be provided")
 	}
+	if len(args) > 1 {
+		return errors.New("only provide one location area")
+	}
 	area := args[0]
 
 	location, err := cfg.apiClient.GetLocation(&area)
@@ -178,9 +190,97 @@ func commandExplore(cfg *apiConfig, args ...string) error {
 	return nil
 }
 
+func commandCatch(cfg *apiConfig, args ...string) error {
+	if len(args) == 0 {
+		return errors.New("name of Pokemon must be provided")
+	}
+	if len(args) > 1 {
+		return errors.New("only provide one Pokemon to catch")
+	}
+	name := args[0]
+
+	pokemon, err := cfg.apiClient.GetPokemon(&name)
+	if err != nil {
+		return errors.New("failed to get Pokemon information")
+	}
+	fmt.Printf("Throwing a Pokeball at %v...\n", name)
+
+	baseExp := pokemon.BaseXP
+	maxExp := 200
+	if maxExp < baseExp {
+		maxExp += (((baseExp - maxExp) / 100) + 1) * 100
+	}
+
+	chance := rand.Intn(maxExp)
+	if chance > baseExp {
+		fmt.Printf("%v was caught!\n", name)
+		cfg.caught[name] = pokemon
+	} else {
+		fmt.Printf("%v escaped!\n", name)
+	}
+
+	return nil
+}
+
+func commandInspect(cfg *apiConfig, args ...string) error {
+	if len(args) == 0 {
+		return errors.New("name of Pokemon must be provided")
+	}
+	if len(args) > 1 {
+		return errors.New("only provide one Pokemon to inspect")
+	}
+	name := args[0]
+
+	pokemon, ok := cfg.caught[name]
+	if !ok {
+		fmt.Println("you have not caught that Pokemon")
+		return nil
+	}
+
+	fmt.Printf("Name: %v\n", pokemon.Name)
+	fmt.Printf("Height: %v\n", pokemon.Height)
+	fmt.Printf("Weight: %v\n", pokemon.Weight)
+	fmt.Println("Stats:")
+	for _, stat := range pokemon.Stats {
+		fmt.Printf("  - %v: %v\n", stat.Stat.Name, stat.BaseStat)
+	}
+	fmt.Println("Types:")
+	for _, types := range pokemon.Types {
+		fmt.Printf("  - %v\n", types.Type.Name)
+	}
+
+	return nil
+}
+
+func commandPokedex(cfg *apiConfig, args ...string) error {
+	if len(cfg.caught) == 0 {
+		fmt.Println("you have not caught any Pokemon")
+		return nil
+	}
+
+	fmt.Println("Your Pokedex:")
+	for _, pokemon := range cfg.caught {
+		fmt.Printf(" - %v\n", pokemon.Name)
+	}
+
+	return nil
+}
+
 // Helper functions
 
 func cleanInput(text string) []string {
 	words := strings.Fields(strings.ToLower(text))
 	return words
 }
+
+func checkCommands() error {
+	keys, cmds := getCommands()
+	for _, name := range keys {
+		_, valid := cmds[name]
+		if !valid {
+			return fmt.Errorf("unknown command: %s\n", name)
+		}
+	}
+	return nil
+}
+
