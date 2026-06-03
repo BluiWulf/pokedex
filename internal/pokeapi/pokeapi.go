@@ -2,12 +2,11 @@ package pokeapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/bluiwulf/pokedex/internal/pokecache"
 	"io"
 	"net/http"
 	"time"
-
-	"fmt"
 )
 
 const (
@@ -45,7 +44,7 @@ type Name struct {
 type EncounterDetail struct {
 	MinLvl				 int				   `json:"min_level"`
 	MaxLvl				 int				   `json:"max_level"`
-	ConditionVals		 []int				   `json:"condition_values"`
+	ConditionVals		 []BasicData		   `json:"condition_values"`
 	Chance 				 int				   `json:"chance"`
 	Method				 BasicData			   `json:"method"`
 }
@@ -68,6 +67,7 @@ type LocationArea struct {
 	EncounterMethodRates []EncounterMethodRate `json:"encounter_method_rates"`
 	Location			 BasicData			   `json:"location"`
 	Names				 []Name				   `json:"names"`
+	PokemonEncounters	 []PokemonEncounter	   `json:"pokemon_encounters"`
 }
 
 type RespAreas struct {
@@ -114,12 +114,39 @@ func (c *Client) ListAreas(pageURL *string) (RespAreas, error) {
 	areaResp := RespAreas{}
 	err := json.Unmarshal(entry, &areaResp)
 	if err != nil {
-		fmt.Println()
-		fmt.Println("Here's the error")
-		fmt.Println()
 		return RespAreas{}, err
 	}
 
 	return areaResp, nil
+}
+
+func (c *Client) GetLocation(area *string) (LocationArea, error) {
+	pageURL := areasURL + *area + "/"
+	entry, ok := c.PokeCache.Get(pageURL)
+	if !ok {
+		req, err := http.NewRequest("GET", pageURL, nil)
+		if err != nil {
+			return LocationArea{}, err
+		}
+		res, err := c.httpClient.Do(req)
+		if err != nil {
+			return LocationArea{}, err
+		}
+		defer res.Body.Close()
+
+		entry, err = io.ReadAll(res.Body)
+		if err != nil {
+			return LocationArea{}, err
+		}
+		c.PokeCache.Add(pageURL, entry)
+	}
+
+	location := LocationArea{}
+	err := json.Unmarshal(entry, &location)
+	if err != nil {
+		return LocationArea{}, err
+	}
+
+	return location, nil
 }
 

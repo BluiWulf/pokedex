@@ -10,15 +10,15 @@ import (
 )
 
 type apiConfig struct {
-	apiClient pokeapi.Client
-	Next 	  *string
-	Previous  *string
+	apiClient 	pokeapi.Client
+	Next 	  	*string
+	Previous  	*string
 }
 
 type cliCommand struct {
 	name		string
 	description string
-	callback	func(*apiConfig) error
+	callback	func(*apiConfig, ...string) error
 }
 
 func startPokedex(cfg *apiConfig) {
@@ -32,10 +32,12 @@ func startPokedex(cfg *apiConfig) {
 			continue
 		}
 		usrCmd := words[0]
+		args := words[1:]
 		
-		cmd, valid := getCommands()[usrCmd]
+		_, cmds := getCommands()
+		cmd, valid := cmds[usrCmd]
 		if valid {
-			err := cmd.callback(cfg)
+			err := cmd.callback(cfg, args...)
 			if err != nil {
 				fmt.Println("Error occurred: ", err)
 			}
@@ -47,18 +49,15 @@ func startPokedex(cfg *apiConfig) {
 
 // Command functions
 
-func getCommands() map[string]cliCommand {
-	return map[string]cliCommand {
-		"exit": {
-			name: 		 	"exit",
-			description: 	"Exit the Pokedex",
-			callback:		commandExit,
-		},
-		"help": {
-			name:			"help",
-			description:	"Displays a help message",
-			callback:		commandHelp,
-		},
+func getCommands() ([]string, map[string]cliCommand) {
+	keys := []string{
+		"map",
+		"mapb",
+		"explore",
+		"help",
+		"exit",
+	}
+	cmds := map[string]cliCommand {
 		"map": {
 			name: 			"map",
 			description: 	"Displays the next 20 location areas",
@@ -74,32 +73,58 @@ func getCommands() map[string]cliCommand {
 			description:	"Displays a list of all Pokemon in a given area",
 			callback:		commandExplore,
 		},
+		"help": {
+			name:			"help",
+			description:	"Displays a help message",
+			callback:		commandHelp,
+		},
+		"exit": {
+			name: 		 	"exit",
+			description: 	"Exit the Pokedex",
+			callback:		commandExit,
+		},
 	}
+	return keys, cmds
 }
 
-func commandExit(cfg *apiConfig) error {
+func checkCommands() error {
+	keys, cmds := getCommands()
+	for _, name := range keys {
+		_, valid := cmds[name]
+		if !valid {
+			return fmt.Errorf("unknown command: %s", name)
+		}
+	}
+	return nil
+}
+
+func commandExit(cfg *apiConfig, args ...string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 
-	return errors.New("Failed to close Pokedex")
+	return errors.New("failed to close Pokedex")
 }
 
-func commandHelp(cfg *apiConfig) error {
+func commandHelp(cfg *apiConfig, args ...string) error {
 	fmt.Println()
 	fmt.Println("Welcome to the Pokedex!")
 	fmt.Println("Usage:")
 	fmt.Println()
-	for _, cmd := range getCommands() {
+
+	keys, cmds := getCommands()
+
+	for _, name := range keys {
+		cmd := cmds[name]
 		fmt.Printf("%v: %v\n", cmd.name, cmd.description)
 	}
 	fmt.Println()
 	return nil
 }
 
-func commandMap(cfg *apiConfig) error {
+func commandMap(cfg *apiConfig, args ...string) error {
 	areaResp, err := cfg.apiClient.ListAreas(cfg.Next)
 	if err != nil {
-		return errors.New("Failed to get location areas")
+		return errors.New("failed to get location areas")
 	}
 
 	cfg.Next = areaResp.Next
@@ -112,7 +137,7 @@ func commandMap(cfg *apiConfig) error {
 	return nil
 }
 
-func commandMapb(cfg *apiConfig) error {
+func commandMapb(cfg *apiConfig, args ...string) error {
 	if cfg.Previous == nil {
 		fmt.Println("You're on the first page")
 		return nil
@@ -120,7 +145,7 @@ func commandMapb(cfg *apiConfig) error {
 
 	areaResp, err := cfg.apiClient.ListAreas(cfg.Previous)
 	if err != nil {
-		return errors.New("Failed to get location areas")
+		return errors.New("failed to get location areas")
 	}
 
 	cfg.Next = areaResp.Next
@@ -133,8 +158,24 @@ func commandMapb(cfg *apiConfig) error {
 	return nil
 }
 
-func commandExplore(cfg *apiConfig) error {
-	
+func commandExplore(cfg *apiConfig, args ...string) error {
+	if len(args) == 0 {
+		return errors.New("location area must be provided")
+	}
+	area := args[0]
+
+	location, err := cfg.apiClient.GetLocation(&area)
+	if err != nil {
+		return errors.New("failed to get location area information")
+	}
+
+	fmt.Printf("Exploring %v...\n", area)
+	fmt.Println("Found Pokemon:")
+	for _, encounter := range location.PokemonEncounters {
+		fmt.Printf(" - %v\n", encounter.Pokemon.Name)
+	}
+
+	return nil
 }
 
 // Helper functions
