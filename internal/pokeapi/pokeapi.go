@@ -14,6 +14,7 @@ const (
 	pokemonURL	= apiURL + "pokemon/"
 )
 
+// Primary client for communicating with the PokeAPI and cache
 type Client struct {
 	httpClient http.Client
 	PokeCache  pokecache.Cache
