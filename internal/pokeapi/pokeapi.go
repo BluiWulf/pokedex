@@ -36,6 +36,8 @@ func NewClient(timeout, interval time.Duration) Client {
 	}
 }
 
+// Gathers a list of all areas to add to the cache and display when the correct
+// command is used
 func (c *Client) ListAreas(pageURL *string) (RespAreas, error) {
 	page := areasURL
 	if pageURL != nil {
